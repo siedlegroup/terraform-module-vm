@@ -1,0 +1,113 @@
+#! /bin/bash
+# 1 Github app private key path
+
+run_as_user=ubuntu
+
+if [[ $EUID -ne $(id -u $run_as_user) ]]; then
+    user_path=$( getent passwd $run_as_user | cut -d: -f6 )
+    user_script_path="$user_path/$(basename $0)"
+    cp "$(realpath $0)" "$user_path/"
+    chown $run_as_user: "$user_script_path"
+    echo "Switching to user '$run_as_user' to perform tasks"
+    exec sudo -iu "$run_as_user" "$user_script_path"
+fi
+
+set -o pipefail
+
+actions_runner_version="2.311.0"
+repo_path="siedlegroup/sgc-sus-project"
+
+getJwtToken() {
+    app_id=716746
+    pem="""
+${key}
+    """ # file path of the private key as second argument
+
+    now=$(date +%s)
+    iat=$(($${now} - 60)) # Issues 60 seconds in the past
+    exp=$(($${now} + 300)) # Expires 10 minutes in the future
+
+    b64enc() { openssl base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n'; }
+
+    header_json='{
+        "typ":"JWT",
+        "alg":"RS256"
+    }'
+    # Header encode
+    header=$( echo -n "$${header_json}" | b64enc )
+
+    payload_json='{
+        "iat":'"$${iat}"',
+        "exp":'"$${exp}"',
+        "iss":'"$${app_id}"'
+    }'
+    # Payload encode
+    payload=$( echo -n "$${payload_json}" | b64enc )
+
+    # Signature
+    header_payload="$${header}"."$${payload}"
+    signature=$( 
+        openssl dgst -sha256 -sign <(echo -n "$${pem}") \
+        <(echo -n "$${header_payload}") | b64enc 
+    )
+
+    # Create JWT
+    JWT="$${header_payload}"."$${signature}"
+    printf '%s' $JWT
+}
+
+getApiAuthToken() {
+    jwt_token=$(getJwtToken)
+
+    # 47537470 is the installation id from the app
+    response=$(curl --silent -X POST \
+    --url "https://api.github.com/app/installations/47537470/access_tokens" \
+    --header "Accept: application/vnd.github+json" \
+    --header "Authorization: Bearer $jwt_token" \
+    --header "X-GitHub-Api-Version: 2022-11-28")
+
+    printf '%s' $(jq -r '.token' <<<"$response")
+}
+
+getRegistrationToken() {
+    # 1 git repository
+    api_auth_token=$(getApiAuthToken)
+    url="https://api.github.com/repos/$1/actions/runners/registration-token"
+    response=$(curl --silent -L \
+    -X POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer $api_auth_token" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    $url)
+
+    printf '%s' $(jq -r '.token' <<< "$response")
+}
+
+#printf 'JWT: %s\n' $(getJwtToken)
+#printf 'Auth: %s\n' $(getApiAuthToken)
+#printf 'Registration: %s\n' $(getRegistrationToken $repo_path)
+
+sudo apt-get update -y
+sudo apt-get install unzip
+sudo snap install jq
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+mkdir actions-runner
+runner_register_token=$(getRegistrationToken $repo_path)
+pushd actions-runner
+curl --silent -o actions-runner-linux-x64-$actions_runner_version.tar.gz -L https://github.com/actions/runner/releases/download/v$actions_runner_version/actions-runner-linux-x64-$actions_runner_version.tar.gz
+tar xzf ./actions-runner-linux-x64-$actions_runner_version.tar.gz
+./config.sh --unattended --url https://github.com/$repo_path --token $runner_register_token --labels "sus" --name "$(hostname)-$(date '+%y%m%d%H%M%S')"
+sudo ./svc.sh install
+sudo ./svc.sh start
+popd
+# deactivated binary deployments as not required or snap versions outdated
+#sudo snap install terraform --classic
+#sudo snap install powershell --classic
+#sudo snap install terragrunt
+sudo snap install docker
+# add docker group and add user
+sudo addgroup --system docker
+sudo adduser $USER docker
+# newgrp docker
+sudo snap disable docker
+sudo snap enable docker
