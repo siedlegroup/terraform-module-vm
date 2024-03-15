@@ -1,0 +1,72 @@
+---
+  name: tf-module-check
+  on:
+      pull_request:
+  
+  jobs:
+      validate:
+          name: Validate Terraform
+          runs-on: ubuntu-latest
+          permissions:
+            id-token: write
+            contents: read
+            pull-requests: write
+          env:
+            ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+            ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+            ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+            ARM_USE_AZUREAD: true
+            ARM_USE_OIDC: true
+          
+          steps:
+              - name: Checkout Code
+                uses: actions/checkout@v4
+      
+              - name: Install Terraform
+                uses: hashicorp/setup-terraform@v2
+
+              - name: Code Security Check
+                id: checkov
+                uses: bridgecrewio/checkov-action@master
+                with:
+                  directory: ../.
+                  framework: terraform 
+  
+              - name: Terraform Format Check
+                run: terraform -chdir=test fmt -check 
+          
+              - name: Terraform Init
+                run: terraform -chdir=test init -backend=false
+          
+              - name: Terraform Validate
+                run: terraform -chdir=test validate
+  
+              - name: Terraform Plan
+                run: terraform -chdir=test plan -input=false -out=tfplan
+                id: plan
+
+              - name: Show full Plan for Review
+                run: terraform -chdir=test show tfplan
+          
+              - name: Update Pull Request
+                if: (success() || failure()) && github.event_name == 'pull_request'
+                uses: actions/github-script@v6
+                with:
+                    github-token: ${{ secrets.GITHUB_TOKEN }}
+                    script: |
+                      const output = `#### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+          
+                      <details><summary>Run details</summary>
+          
+                      The plan was a ${{ steps.plan.outcome }} see the action for more details.
+          
+                      </details>
+          
+                      *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+          
+                      github.rest.issues.createComment({
+                        issue_number: context.issue.number,
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        body: output
+                      })
