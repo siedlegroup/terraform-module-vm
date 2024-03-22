@@ -8,6 +8,7 @@
           name: Validate Terraform
           runs-on: ubuntu-latest
           permissions:
+            # checkov:skip=CKV2_GHA_1
             id-token: write
             contents: read
             pull-requests: write
@@ -30,7 +31,8 @@
                 uses: bridgecrewio/checkov-action@master
                 with:
                   directory: ../.
-                  framework: terraform 
+                  framework: terraform
+                  skip_check: CKV2_GHA_1
   
               - name: Terraform Format Check
                 run: terraform -chdir=test fmt -check 

@@ -7,10 +7,11 @@ resource "azurerm_virtual_machine_extension" "this" {
   type_handler_version = "2.0"
   settings             = <<SETTINGS
  {
-  "script": "${base64encode(templatefile("scripts/github-runner.tftpl", { key = var.github_app_private_key }))}"
+  "script": "${base64encode(templatefile("files/github-runner.tftpl", { key = var.github_app_private_key }))}"
  }
 SETTINGS
   lifecycle {
     ignore_changes = [settings]
   }
+  tags = var.tags
 }

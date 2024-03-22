@@ -23,6 +23,11 @@ variable "private_dns_zone_name" {
   description = "Name of the existing private DNS zone, usually in a shared environment"
 }
 
+variable "public_dns_zone_name" {
+  type        = string
+  description = "Domain name to use for the public DNS zone"
+}
+
 variable "location" {
   type        = string
   description = "The location/region to keep all your network resources. To get the list of all locations with table format from azure cli, run 'az account list-locations -o table'"
@@ -38,9 +43,27 @@ variable "vnet_subnets_name_id" {
   description = "Subnet names and IDs created in the current vnet"
 }
 
-variable "ssh_key" {
+//TO DO: enable this for Load Balancer implementation
+/*
+variable "vnet_id" {
   type        = string
-  description = "SSH key to add to each vm for secure access"
+  description = "ID of virtual network"
+}
+*/
+
+variable "ssh_key_public" {
+  type        = string
+  description = "Public SSH key from the `ssh-key` module to add to each vm for secure access, available through Key Vault"
+}
+
+variable "ssh_key_private" {
+  type        = string
+  description = "Private SSH key for file provisioner connection"
+}
+
+variable "bootstrapping_ssh_key" {
+  type        = string
+  description = "SSH key from the `ssh-key` module to add to each vm for secure access, available through Key Vault"
 }
 
 variable "vmsto_account_uri" {
@@ -53,7 +76,8 @@ variable "virtual_machines" {
     vm_name              = optional(string)
     size                 = string
     disk_size            = number
-    subnet_id            = string
+    private_subnet_id    = string
+    public_subnet_id     = optional(string)
     configure_as_runner  = optional(bool)
     expose               = optional(list(string))
     storage_account_type = optional(string)
@@ -75,10 +99,16 @@ variable "nsg_name" {
 
 variable "nsg_ruleset" {
   type = map(object({
-    priority               = number,
-    direction              = string,
-    protocol               = string,
-    access                 = string,
-    destination_port_range = string,
+    priority                = number,
+    direction               = string,
+    protocol                = string,
+    access                  = string,
+    destination_port_ranges = list(string),
   }))
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Map of key/value pairs added to tag the storage account."
+  default     = {}
 }

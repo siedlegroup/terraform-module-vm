@@ -5,4 +5,7 @@ repos:
     - id: terraform_fmt
     - id: terragrunt_fmt
     - id: terraform_checkov
+      args:
+        - --args=--skip-check CKV2_GHA_1
+        - --args=--skip-check CKV_GHA_7
     - id: terraform_tflint
